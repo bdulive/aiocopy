@@ -8,7 +8,7 @@
 #include <linux/aio_abi.h>
 
 #define	BUF_SIZE	4096
-#define MIN_EVENTS_NR	8
+#define MIN_EVENTS_NR	2
 #define MAX_EVENTS_NR	64
 
 inline int io_setup(unsigned nr, aio_context_t *ctxp) {
@@ -29,7 +29,7 @@ inline int io_getevents(aio_context_t ctx, long min_nr, long max_nr,
 }
 
 
-int setup_iocb(struct iocb *iocbp, int fd, void *buf, size_t count, off_t pos, unsigned int opcode)
+int setup_iocb(struct iocb *iocbp, int fd, void *buf, size_t len, off_t pos, unsigned int opcode)
 {
 	memset(iocbp, 0, sizeof(*iocbp));
 
@@ -37,7 +37,7 @@ int setup_iocb(struct iocb *iocbp, int fd, void *buf, size_t count, off_t pos, u
 	iocbp->aio_lio_opcode = opcode;
 
 	iocbp->aio_buf = (uint64_t)buf;
-	iocbp->aio_nbytes = count;
+	iocbp->aio_nbytes = len;
 
 	iocbp->aio_offset = pos; /* absolute offset in file */
 
@@ -50,12 +50,11 @@ int main(int argc, char *argv[])
 	int fdin, fdout;
 	aio_context_t ctx;
 	int ret;
-	size_t count, pos;
+	size_t i, pos;
 
-	struct iocb iocb;
 	struct iocb *iocbpp[MAX_EVENTS_NR];
 	struct io_event events[MAX_EVENTS_NR];
-	char buf[MAX_EVENTS_NR][BUF_SIZE] = {0};
+	char buf[MAX_EVENTS_NR][BUF_SIZE] = {{0}};
 
 	if (argc != 3) {
 		printf("usage: %s <fromfile> <tofile>\n", argv[0]);
@@ -82,17 +81,14 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
-	count = BUF_SIZE;
-
-	int i;
 	/* Alloc and set up IO control block for read */
-	for (i = pos = 0; i < MAX_EVENTS_NR; i++, pos += count) {
+	for (i = pos = 0; i < MAX_EVENTS_NR; i++, pos += BUF_SIZE) {
 		iocbpp[i] = malloc(sizeof(struct iocb));
 		if (iocbpp[i] == NULL) {
 			perror("malloc");  
 			goto out;	
 		}
-		setup_iocb(iocbpp[i], fdin, buf[i], count, pos, IOCB_CMD_PREAD);
+		setup_iocb(iocbpp[i], fdin, buf[i], BUF_SIZE, pos, IOCB_CMD_PREAD);
 	}
 
 
@@ -108,38 +104,50 @@ int main(int argc, char *argv[])
 		goto out;
 	}
 
-	int got = 0;
-	/* Get events of read */
-	do {	
-		printf("Doing io_getevents ...\n");
+	/* Get events of read. To simplify, wait infinitely for max events */
+	ret = io_getevents(ctx, MAX_EVENTS_NR, MAX_EVENTS_NR, events, NULL);
+	printf("read events: %d\n", ret);
 
-		ret = io_getevents(ctx, MIN_EVENTS_NR, MAX_EVENTS_NR, events, NULL);
+	/* Got events only if ret > 0 */
+	if(ret <= 0) {
+		perror("io_getevents for read");
+		goto out;
+	}
 
-		printf("read events: %d\n", ret);
+	/* Set up IO control block for write, and attach buffer with read data */
+	for (i = pos = 0; i < MAX_EVENTS_NR; i++, pos += BUF_SIZE)
+		setup_iocb(iocbpp[i], fdout, buf[i], BUF_SIZE, pos, IOCB_CMD_PWRITE);
 
-		if(ret < 0) {
-			perror("io_getevents for read");
-			goto out;
-		}
+	/* Submit IOs to write */
+	ret = io_submit(ctx, MAX_EVENTS_NR, iocbpp);
 
-		for (i = 0; i < ret ;i++)
-			if (write(fdout, buf[i], count) != count) {
-				perror("write");
-				ret = -1;
-				goto out;
-			}
-	} while ((got += ret) < MAX_EVENTS_NR);
+	if (ret != MAX_EVENTS_NR) {
+		if (ret < 0) 
+			perror("io_submit for write");
+		else
+			printf("io_submit for write failed\n");
+
+		goto out;
+	}
+
+	/* Get events of write. To simplify, wait infinitely for max events */
+	ret = io_getevents(ctx, MAX_EVENTS_NR, MAX_EVENTS_NR, events, NULL);
+	printf("write events: %d\n", ret);
+
+	/* Got events only if ret > 0 */
+	if(ret <= 0) {
+		perror("io_getevents for write");
+		goto out;
+	}
 
 out:
-	/* Release all buffer */
+	/* Release all resources */
 	for (i = 0; i < MAX_EVENTS_NR; i++) 
 		free(iocbpp[i]);
 
 	ret = io_destroy(ctx);
-	if (ret < 0) {
+	if (ret < 0)
 		perror("io_destroy error");
-		return -1;
-	}
 
 	return ret;
 }
