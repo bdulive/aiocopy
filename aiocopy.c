@@ -11,61 +11,18 @@
 #define MIN_EVENTS_NR	8
 #define MAX_EVENTS_NR	64
 
-/* sys_io_setup:
- *  Create an aio_context capable of receiving at least nr_events.
- *  ctxp must not point to an aio_context that already exists, and
- *  must be initialized to 0 prior to the call.  On successful
- *  creation of the aio_context, *ctxp is filled in with the resulting 
- *  handle.  May fail with -EINVAL if *ctxp is not initialized,
- *  if the specified nr_events exceeds internal limits.  May fail 
- *  with -EAGAIN if the specified nr_events exceeds the user's limit 
- *  of available events.  May fail with -ENOMEM if insufficient kernel
- *  resources are available.  May fail with -EFAULT if an invalid
- *  pointer is passed for ctxp.  Will fail with -ENOSYS if not
- *  implemented.
- */
 inline int io_setup(unsigned nr, aio_context_t *ctxp) {
 	return syscall(__NR_io_setup, nr, ctxp);
 }
 
-/* sys_io_destroy:
- *  Destroy the aio_context specified.  May cancel any outstanding 
- *  AIOs and block on completion.  Will fail with -ENOSYS if not
- *  implemented.  May fail with -EINVAL if the context pointed to
- *  is invalid.
- */
 inline int io_destroy(aio_context_t ctx) {
 	return syscall(__NR_io_destroy, ctx);
 }
 
-/* sys_io_submit:
- *  Queue the nr iocbs pointed to by iocbpp for processing.  Returns
- *  the number of iocbs queued.  May return -EINVAL if the aio_context
- *  specified by ctx_id is invalid, if nr is < 0, if the iocb at
- *  *iocbpp[0] is not properly initialized, if the operation specified
- *  is invalid for the file descriptor in the iocb.  May fail with
- *  -EFAULT if any of the data structures point to invalid data.  May
- *  fail with -EBADF if the file descriptor specified in the first
- *  iocb is invalid.  May fail with -EAGAIN if insufficient resources
- *  are available to queue any iocbs.  Will return 0 if nr is 0.  Will
- *  fail with -ENOSYS if not implemented.
- */
 inline int io_submit(aio_context_t ctx, long nr, struct iocb **iocbpp) {
 	return syscall(__NR_io_submit, ctx, nr, iocbpp);
 }
 
-/* io_getevents:
- *  Attempts to read at least min_nr events and up to nr events from
- *  the completion queue for the aio_context specified by ctx_id. If
- *  it succeeds, the number of read events is returned. May fail with
- *  -EINVAL if ctx_id is invalid, if min_nr is out of range, if nr is
- *  out of range, if timeout is out of range.  May fail with -EFAULT
- *  if any of the memory specified is invalid.  May return 0 or
- *  < min_nr if the timeout specified by timeout has elapsed
- *  before sufficient events are available, where timeout == NULL
- *  specifies an infinite timeout. Note that the timeout pointed to by
- *  timeout is relative.  Will fail with -ENOSYS if not implemented.
- */
 inline int io_getevents(aio_context_t ctx, long min_nr, long max_nr,
 		struct io_event *events, struct timespec *timeout) {
 	return syscall(__NR_io_getevents, ctx, min_nr, max_nr, events, timeout);
