@@ -50,11 +50,11 @@ int main(int argc, char *argv[])
 	int fdin, fdout;
 	aio_context_t ctx;
 	int ret;
-	size_t i, pos;
+	size_t i, pos, len;
 
 	struct iocb *iocbpp[MAX_EVENTS_NR];
 	struct io_event events[MAX_EVENTS_NR];
-	char buf[MAX_EVENTS_NR][BUF_SIZE] = {{0}};
+	char *bufs[MAX_EVENTS_NR] = {0};
 
 	if (argc != 3) {
 		printf("usage: %s <fromfile> <tofile>\n", argv[0]);
@@ -82,13 +82,20 @@ int main(int argc, char *argv[])
 	}
 
 	/* Alloc and set up IO control block for read */
-	for (i = pos = 0; i < MAX_EVENTS_NR; i++, pos += BUF_SIZE) {
+	for (i = pos = 0, len = BUF_SIZE; i < MAX_EVENTS_NR; i++, pos += len) {
 		iocbpp[i] = malloc(sizeof(struct iocb));
 		if (iocbpp[i] == NULL) {
-			perror("malloc");  
+			perror("malloc iocb");  
 			goto out;	
 		}
-		setup_iocb(iocbpp[i], fdin, buf[i], BUF_SIZE, pos, IOCB_CMD_PREAD);
+
+		bufs[i] = malloc(len);
+		if (bufs[i] == NULL) {
+		  perror("malloc buf");
+		  goto out;
+		}
+
+		setup_iocb(iocbpp[i], fdin, bufs[i], len, pos, IOCB_CMD_PREAD);
 	}
 
 
@@ -115,8 +122,8 @@ int main(int argc, char *argv[])
 	}
 
 	/* Set up IO control block for write, and attach buffer with read data */
-	for (i = pos = 0; i < MAX_EVENTS_NR; i++, pos += BUF_SIZE)
-		setup_iocb(iocbpp[i], fdout, buf[i], BUF_SIZE, pos, IOCB_CMD_PWRITE);
+	for (i = pos = 0; i < MAX_EVENTS_NR; i++, pos += len)
+		setup_iocb(iocbpp[i], fdout, bufs[i], len, pos, IOCB_CMD_PWRITE);
 
 	/* Submit IOs to write */
 	ret = io_submit(ctx, MAX_EVENTS_NR, iocbpp);
@@ -142,8 +149,17 @@ int main(int argc, char *argv[])
 
 out:
 	/* Release all resources */
-	for (i = 0; i < MAX_EVENTS_NR; i++) 
+	for (i = 0; i < MAX_EVENTS_NR; i++) {
+		if (!iocbpp[i])
+		  break;
 		free(iocbpp[i]);
+	}
+
+	for (i = 0; i < MAX_EVENTS_NR; i++) {
+		if (!bufs[i])
+		  break;
+		free(bufs[i]);
+	}
 
 	ret = io_destroy(ctx);
 	if (ret < 0)
