@@ -7,24 +7,28 @@
 #include <sys/syscall.h>
 #include <linux/aio_abi.h>
 
-#define	BUF_SIZE	4096
+#define	BUF_SIZE		4096
 #define MIN_EVENTS_NR	2
 #define MAX_EVENTS_NR	64
 
-inline int io_setup(unsigned nr, aio_context_t *ctxp) {
+inline int io_setup(unsigned nr, aio_context_t *ctxp) 
+{
 	return syscall(__NR_io_setup, nr, ctxp);
 }
 
-inline int io_destroy(aio_context_t ctx) {
+inline int io_destroy(aio_context_t ctx) 
+{
 	return syscall(__NR_io_destroy, ctx);
 }
 
-inline int io_submit(aio_context_t ctx, long nr, struct iocb **iocbpp) {
+inline int io_submit(aio_context_t ctx, long nr, struct iocb **iocbpp) 
+{
 	return syscall(__NR_io_submit, ctx, nr, iocbpp);
 }
 
 inline int io_getevents(aio_context_t ctx, long min_nr, long max_nr,
-		struct io_event *events, struct timespec *timeout) {
+						struct io_event *events, struct timespec *timeout) 
+{
 	return syscall(__NR_io_getevents, ctx, min_nr, max_nr, events, timeout);
 }
 
@@ -150,15 +154,11 @@ int main(int argc, char *argv[])
 out:
 	/* Release all resources */
 	for (i = 0; i < MAX_EVENTS_NR; i++) {
-		if (!iocbpp[i])
-		  break;
-		free(iocbpp[i]);
-	}
+		if (iocbpp[i])
+			free(iocbpp[i]);
 
-	for (i = 0; i < MAX_EVENTS_NR; i++) {
-		if (!bufs[i])
-		  break;
-		free(bufs[i]);
+		if (bufs[i])
+			free(bufs[i]);
 	}
 
 	ret = io_destroy(ctx);
